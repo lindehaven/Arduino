@@ -1,19 +1,20 @@
 /*
  *  Clock - Using LCD 1602 shield and Timer1 interrupts (no RTC needed).
  *
- *  v1.0.0, 2018-02-27, Lars Lindehaven.
+ *  v1.1.0, 2018-02-28, Lars Lindehaven.
  *      Date, day of week, ISO week number, time and timer.
  *      Adjustment with microsecond resolution.
+ *      Serial commands.
  *
  */
 
 #include <LiquidCrystal.h>
 #include <TimerOne.h>
 
-#define APP_TITLE  "Clock v1.0.0    "
+#define APP_TITLE  "Clock v1.1.0    "
 #define APP_AUTHOR "Lars Lindehaven "
-#define MICRO_SECS 1000280L
-#define DEBUG      1
+#define MICRO_SECS 1000300L
+#define SERIAL     1
 #define LCDS_PIN   A0
 #define TIMER_EXP  10
 
@@ -30,7 +31,6 @@ enum State {
   FSM_TIMER_SECOND,
   FSM_ADJUST
 };
-#define STATES 10
 
 enum {
   VAL_OK,
@@ -48,35 +48,34 @@ enum {
 };
 
 typedef struct {
-  int year;
-  int month;
-  int day;
+  unsigned int year;
+  unsigned int month;
+  unsigned int day;
 } Date;
 
 typedef struct {
-  int hour;
-  int minute;
-  int second;
+  unsigned int hour;
+  unsigned int minute;
+  unsigned int second;
 } Time;
 
 typedef struct {
-  int totSeconds;
-  int expSeconds;
+  unsigned int totSeconds;
+  unsigned int expSeconds;
   Time time;
 } Timer;
 
 LiquidCrystal myLCD(8, 9, 4, 5, 6, 7);
-Date myDate = {2018, 2, 27};
-Time myTime = {1, 0, 0};
+Date myDate = {2018, 2, 28};
+Time myTime = {1, 1, 0};
 Timer myTimer = {0, TIMER_EXP, {0, 0, 0}};
 Timer myTimerPreset = {0, TIMER_EXP, {0, 0, 0}};
-int myState = FSM_RUN;
-long int myMicroSecs = MICRO_SECS;
+unsigned int myState = FSM_RUN;
+unsigned long int myMicroSecs = MICRO_SECS;
 
 static int setYear(Date &d, int year)
 {
-  if (year < 2018)
-  {
+  if (year < 2018) {
     d.year = 2018;
     return VAL_TOO_LOW;
   }
@@ -279,7 +278,7 @@ static int setTimerSecond(Timer &t, int second)
 
 static void setTimerTotSeconds(Timer &t)
 {
-  t.totSeconds = 3600 * t.time.hour + 60 * t.time.minute + t.time.second;
+  t.totSeconds = t.time.hour * 3600 + t.time.minute * 60 + t.time.second;
 }
 
 static void copyTimer(Timer &td, Timer ts)
@@ -289,6 +288,20 @@ static void copyTimer(Timer &td, Timer ts)
   td.time.hour = ts.time.hour;
   td.time.minute = ts.time.minute;
   td.time.second = ts.time.second;
+}
+
+static void setTimer1(long int microSecs)
+{
+  noInterrupts();
+  if (microSecs < 990000L)
+    myMicroSecs = 990000L;
+  else if (microSecs > 1010000L)
+    myMicroSecs = 1010000L;
+  else
+    myMicroSecs = microSecs;
+  Timer1.initialize(myMicroSecs);
+  Timer1.attachInterrupt(ISR_SecondPassed);
+  interrupts(); 
 }
 
 static void addSecondToDateTime(Date &d, Time &t)
@@ -357,18 +370,18 @@ static int getWeekNumber(int y, int m, int d)
   else if (m == 12 && t3 > 30-(d-1) && t3 < 4)
     return 1;
   else
-    return (t2 < 4) + 4*(m-1) + (2*(m-1) + (d-1) + t2 - t1 + 6) * 36/256;
+    return (t2 < 4) + 4*(m-1) + (2*(m-1) + (d-1) + t2 - t1 + 6) * 36 / 256;
 }
 
 static int readButton(int adcButtonIn)
 {
   int adcKeyIn = analogRead(adcButtonIn);
   if (adcKeyIn > 1000) return BTN_NONE;
-  if (adcKeyIn < 50)   return BTN_RIGHT; 
-  if (adcKeyIn < 195)  return BTN_UP;
-  if (adcKeyIn < 380)  return BTN_DOWN;
-  if (adcKeyIn < 555)  return BTN_LEFT;
-  if (adcKeyIn < 790)  return BTN_SELECT;  
+  if (adcKeyIn <   50) return BTN_RIGHT; 
+  if (adcKeyIn <  195) return BTN_UP;
+  if (adcKeyIn <  380) return BTN_DOWN;
+  if (adcKeyIn <  555) return BTN_LEFT;
+  if (adcKeyIn <  790) return BTN_SELECT;  
   return BTN_NONE;
 }
 
@@ -380,7 +393,7 @@ static void displayDate(Date d)
   myLCD.print(d.month); myLCD.print("-");
   if (d.day < 10) myLCD.print("0");
   myLCD.print(d.day);
-#ifdef DEBUG
+#ifdef SERIAL
   if (myState == FSM_RUN)
   {
     Serial.print("Date=");
@@ -409,7 +422,7 @@ static void displayDayOfWeek(Date d)
     case 6: myLCD.print("Sun"); break;
     default: myLCD.print("???"); break;
   }
-#ifdef DEBUG
+#ifdef SERIAL
   if (myState == FSM_RUN)
   {
     Serial.print("Day=");
@@ -427,7 +440,7 @@ static void displayWeekNumber(Date d)
   myLCD.print("w");
   if (weekNumber < 10) myLCD.print("0");
   myLCD.print(weekNumber);
-#ifdef DEBUG
+#ifdef SERIAL
   if (myState == FSM_RUN)
   {
     Serial.print("Week=");
@@ -446,7 +459,7 @@ static void displayTime(Time t)
   myLCD.print(t.minute); myLCD.print(":");
   if (t.second < 10) myLCD.print("0");
   myLCD.print(t.second);
-#ifdef DEBUG
+#ifdef SERIAL
   if (myState == FSM_RUN)
   {
     Serial.print("Time=");
@@ -468,7 +481,7 @@ static void displayTimer(Timer t)
   myLCD.print(t.time.minute); myLCD.print(":");
   if (t.time.second < 10) myLCD.print("0");
   myLCD.print(t.time.second);
-#ifdef DEBUG
+#ifdef SERIAL
   if (myState == FSM_RUN)
   {
     Serial.print("Timer=");
@@ -483,7 +496,14 @@ static void displayTimer(Timer t)
 #endif
 }
 
-static void displayAll(Date d, Time t, Timer tr)
+static void displayTimer1()
+{
+  myLCD.setCursor(0, 1);
+  myLCD.print(myMicroSecs);
+  myLCD.print(" ");
+}
+
+static void displayMain(Date d, Time t, Timer tr)
 {
   displayDate(d);
   displayDayOfWeek(d);
@@ -492,39 +512,54 @@ static void displayAll(Date d, Time t, Timer tr)
   displayTimer(tr);
 }
 
-static void setTimer1(long int microSecs)
-{
-  noInterrupts();
-  if (microSecs > 990000L && microSecs < 1010000L)
-    myMicroSecs = microSecs;
-  else
-    myMicroSecs = MICRO_SECS;
-  Timer1.initialize(myMicroSecs);
-  Timer1.attachInterrupt(ISR_SecondPassed);
-  interrupts(); 
-}
-
-static void displayTimer1()
-{
-  myLCD.setCursor(0, 0);
-  myLCD.print("Set microsec/sec");
-  myLCD.setCursor(0, 1);
-  myLCD.print(myMicroSecs);
-}
-
-#ifdef DEBUG
+#ifdef SERIAL
 void serialEvent(void)
 {
-  int byteRead;
-
   if (Serial.available() > 0)
   {
-    byteRead = Serial.read();
-    switch (byteRead)
+    switch (Serial.read())
     {
-      case '1': myLCD.display(); break;
-      case '0': myLCD.noDisplay(); break;
-      default: Serial.print(byteRead); Serial.println(" is not a valid command!");
+      case 'Y': setYear(myDate, Serial.parseInt());
+        break;
+      case 'M': setMonth(myDate, Serial.parseInt());
+        break;
+      case 'D': setDay(myDate, Serial.parseInt());
+        break;
+      case 'h': setHour(myTime, Serial.parseInt());
+        break;
+      case 'm': setMinute(myTime, Serial.parseInt());
+        break;
+      case 's': setSecond(myTime, Serial.parseInt());
+        break;
+      case 't':
+        switch (Serial.read())
+        {
+          case 'h': setTimerHour(myTimer, Serial.parseInt()); break;
+          case 'm': setTimerMinute(myTimer, Serial.parseInt()); break;
+          case 's': setTimerSecond(myTimer, Serial.parseInt()); break;
+          default: break;
+        }
+        copyTimer(myTimerPreset, myTimer);
+        break;
+      case 'A':
+        setTimer1(Serial.parseInt());
+        break;
+      case 'S':
+        myState = Serial.parseInt();
+        if (myState > FSM_ADJUST)
+          myState = FSM_RUN;
+        myLCD.clear();
+        break;
+      case ' ': case '\t': case '\n': case '-': case ':': case ';':
+        break;
+      default:
+        Serial.println("Usage:");
+        Serial.println("  Y year; M month; D day;");
+        Serial.println("  h hour; m minute; s second;");
+        Serial.println("  th hour; tm minute; ts second;");
+        Serial.println("  A microseconds;");
+        Serial.println("  S state;");
+        break;
     }
   }
 }
@@ -550,9 +585,9 @@ void ISR_SecondPassed(void)
   }
   if (myState == FSM_RUN)
   {
-    displayAll(myDate, myTime, myTimer);
+    displayMain(myDate, myTime, myTimer);
   }
-#ifdef DEBUG
+#ifdef SERIAL
   Serial.print("State=");
   Serial.print(myState);
   Serial.println();
@@ -561,7 +596,7 @@ void ISR_SecondPassed(void)
 
 void setup(void)
 {
-#ifdef DEBUG
+#ifdef SERIAL
   Serial.begin(9600);
   Serial.println(APP_TITLE);
   Serial.println(APP_AUTHOR);
@@ -593,20 +628,26 @@ void loop(void)
       copyTimer(myTimer, myTimerPreset);
       break;
     case BTN_LEFT:
-      if (--myState < FSM_DATE_YEAR) myState = FSM_ADJUST; 
+      if (myState == FSM_RUN || myState == FSM_DATE_YEAR)
+        myState = FSM_ADJUST;
+      else
+        --myState;
       change = 0;
-      myLCD.clear();
       break;
     case BTN_RIGHT:
-      if (++myState > FSM_ADJUST) myState = FSM_DATE_YEAR; 
+      if (myState == FSM_RUN || myState == FSM_ADJUST)
+        myState = FSM_DATE_YEAR;
+      else
+        ++myState;
       change = 0;
-      myLCD.clear();
       break;
     case BTN_UP:
-      if (myState != FSM_RUN) change = 1;
+      if (myState != FSM_RUN)
+        change = 1;
       break;
     case BTN_DOWN:
-      if (myState != FSM_RUN) change = -1;
+      if (myState != FSM_RUN)
+        change = -1;
       break;
     default:
       ;
@@ -621,61 +662,61 @@ void loop(void)
         setYear(myDate, myDate.year + change);
         setMonth(myDate, myDate.month);
         setDay(myDate, myDate.day);
-        displayAll(myDate, myTime, myTimer);
+        displayMain(myDate, myTime, myTimer);
         myLCD.setCursor(1, 0);
         break;
       case FSM_DATE_MONTH:
         setMonth(myDate, myDate.month + change);
         setDay(myDate, myDate.day);
-        displayAll(myDate, myTime, myTimer);
+        displayMain(myDate, myTime, myTimer);
         myLCD.setCursor(4, 0);
         break;
       case FSM_DATE_DAY:
         setDay(myDate, myDate.day + change);
-        displayAll(myDate, myTime, myTimer);
+        displayMain(myDate, myTime, myTimer);
         myLCD.setCursor(7, 0);
         break;
       case FSM_TIME_HOUR:
         setHour(myTime, myTime.hour + change);
-        displayAll(myDate, myTime, myTimer);
+        displayMain(myDate, myTime, myTimer);
         myLCD.setCursor(1, 1);
         break;
       case FSM_TIME_MINUTE:
         setMinute(myTime, myTime.minute + change);
-        displayAll(myDate, myTime, myTimer);
+        displayMain(myDate, myTime, myTimer);
         myLCD.setCursor(4, 1);
         break;
       case FSM_TIME_SECOND:
         setSecond(myTime, myTime.second + change);
-        displayAll(myDate, myTime, myTimer);
+        displayMain(myDate, myTime, myTimer);
         myLCD.setCursor(7, 1);
         break;
       case FSM_TIMER_HOUR:
         setTimerHour(myTimer, myTimer.time.hour + change);
         copyTimer(myTimerPreset, myTimer);
-        displayAll(myDate, myTime, myTimer);
+        displayMain(myDate, myTime, myTimer);
         myLCD.setCursor(9, 1);
         break;
       case FSM_TIMER_MINUTE:
         setTimerMinute(myTimer, myTimer.time.minute + change);
         copyTimer(myTimerPreset, myTimer);
-        displayAll(myDate, myTime, myTimer);
+        displayMain(myDate, myTime, myTimer);
         myLCD.setCursor(12, 1);
         break;
       case FSM_TIMER_SECOND:
         setTimerSecond(myTimer, myTimer.time.second + change);
         copyTimer(myTimerPreset, myTimer);
-        displayAll(myDate, myTime, myTimer);
+        displayMain(myDate, myTime, myTimer);
         myLCD.setCursor(15, 1);
         break;
       case FSM_ADJUST:
         setTimer1(myMicroSecs + change);
         displayTimer1();
-        myLCD.setCursor(7, 1);
+        if (myMicroSecs < 1000000L ) myLCD.setCursor(5, 1);
+        else myLCD.setCursor(6, 1);
         break;
       default:
         ;
     }
   }
 }
-
