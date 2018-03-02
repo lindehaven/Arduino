@@ -1,22 +1,50 @@
 /*
- *  Clock - Using LCD 1602 shield and Timer1 interrupts (no RTC needed).
- *
- *  v1.1.0, 2018-02-28, Lars Lindehaven.
- *      Date, day of week, ISO week number, time and timer.
- *      Adjustment with microsecond resolution.
- *      Serial commands.
- *
- */
+    Clock - Using LCD 1602 shield and Timer1 interrupts (no RTC needed).
+   
+    v1.1.1, 2018-03-02, Lars Lindehaven.
+        Date, day of week, ISO week number, time and timer.
+        Adjustment with microsecond resolution.
+        Serial commands and responses.
+   
+    Copyright (C) 2018 Lars Lindehaven. All rights reserved.
+   
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+   
+        * Redistributions of source code must retain the above copyright
+          notice, this list of conditions and the following disclaimer.
+   
+        * Redistributions in binary form must reproduce the above copyright
+          notice, this list of conditions and the following disclaimer in the
+         documentation and/or other materials provided with the distribution.
+   
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*/
 
 #include <LiquidCrystal.h>
 #include <TimerOne.h>
 
-#define APP_TITLE  "Clock v1.1.0    "
+#define APP_TITLE  "Clock v1.1.1    "
 #define APP_AUTHOR "Lars Lindehaven "
-#define MICRO_SECS 1000300L
-#define SERIAL     1
+#define MICRO_SECS 1000295L
 #define LCDS_PIN   A0
 #define TIMER_EXP  10
+#define SERIAL     1
+#ifdef SERIAL
+#define BAUDRATE   9600
+#endif
 
 enum State {
   FSM_RUN,
@@ -66,8 +94,8 @@ typedef struct {
 } Timer;
 
 LiquidCrystal myLCD(8, 9, 4, 5, 6, 7);
-Date myDate = {2018, 2, 28};
-Time myTime = {1, 1, 0};
+Date myDate = {2018, 3, 2};
+Time myTime = {1, 1, 1};
 Timer myTimer = {0, TIMER_EXP, {0, 0, 0}};
 Timer myTimerPreset = {0, TIMER_EXP, {0, 0, 0}};
 unsigned int myState = FSM_RUN;
@@ -519,46 +547,32 @@ void serialEvent(void)
   {
     switch (Serial.read())
     {
-      case 'Y': setYear(myDate, Serial.parseInt());
+      case 'D': case 'd':
+        setYear(myDate, Serial.parseInt());
+        setMonth(myDate, Serial.parseInt());
+        setDay(myDate, Serial.parseInt());
         break;
-      case 'M': setMonth(myDate, Serial.parseInt());
+      case 'C': case 'c':
+        setHour(myTime, Serial.parseInt());
+        setMinute(myTime, Serial.parseInt());
+        setSecond(myTime, Serial.parseInt());
         break;
-      case 'D': setDay(myDate, Serial.parseInt());
-        break;
-      case 'h': setHour(myTime, Serial.parseInt());
-        break;
-      case 'm': setMinute(myTime, Serial.parseInt());
-        break;
-      case 's': setSecond(myTime, Serial.parseInt());
-        break;
-      case 't':
-        switch (Serial.read())
-        {
-          case 'h': setTimerHour(myTimer, Serial.parseInt()); break;
-          case 'm': setTimerMinute(myTimer, Serial.parseInt()); break;
-          case 's': setTimerSecond(myTimer, Serial.parseInt()); break;
-          default: break;
-        }
+      case 'T': case 't':
+        setTimerHour(myTimer, Serial.parseInt());
+        setTimerMinute(myTimer, Serial.parseInt());
+        setTimerSecond(myTimer, Serial.parseInt());
         copyTimer(myTimerPreset, myTimer);
         break;
-      case 'A':
+      case 'A': case 'a':
         setTimer1(Serial.parseInt());
         break;
-      case 'S':
+      case 'S': case 's':
         myState = Serial.parseInt();
         if (myState > FSM_ADJUST)
           myState = FSM_RUN;
         myLCD.clear();
         break;
-      case ' ': case '\t': case '\n': case '-': case ':': case ';':
-        break;
       default:
-        Serial.println("Usage:");
-        Serial.println("  Y year; M month; D day;");
-        Serial.println("  h hour; m minute; s second;");
-        Serial.println("  th hour; tm minute; ts second;");
-        Serial.println("  A microseconds;");
-        Serial.println("  S state;");
         break;
     }
   }
@@ -597,7 +611,7 @@ void ISR_SecondPassed(void)
 void setup(void)
 {
 #ifdef SERIAL
-  Serial.begin(9600);
+  Serial.begin(BAUDRATE);
   Serial.println(APP_TITLE);
   Serial.println(APP_AUTHOR);
 #endif
@@ -716,7 +730,14 @@ void loop(void)
         else myLCD.setCursor(6, 1);
         break;
       default:
-        ;
+        noInterrupts();
+        myLCD.clear();
+        myLCD.setCursor(0, 0);
+        myLCD.print("INTERNAL FAILURE");
+        myLCD.setCursor(0, 1);
+        myLCD.print(" Debug software ");
+        while (1)
+          ;
     }
   }
 }
