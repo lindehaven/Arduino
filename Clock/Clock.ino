@@ -1,10 +1,11 @@
 /*
     Clock - Using LCD 1602 shield and Timer1 interrupts (no RTC needed).
    
-    v1.1.1, 2018-03-02, Lars Lindehaven.
+    v1.1.2, 2018-03-08, Lars Lindehaven.
         Date, day of week, ISO week number, time and timer.
         Adjustment with microsecond resolution.
         Serial commands and responses.
+        Builds on Windows and Linux.
    
     Copyright (C) 2018 Lars Lindehaven. All rights reserved.
    
@@ -36,7 +37,7 @@
 #include <LiquidCrystal.h>
 #include <TimerOne.h>
 
-#define APP_TITLE  "Clock v1.1.1    "
+#define APP_TITLE  "Clock v1.1.2    "
 #define APP_AUTHOR "Lars Lindehaven "
 #define MICRO_SECS 1000295L
 #define LCDS_PIN   A0
@@ -94,12 +95,37 @@ typedef struct {
 } Timer;
 
 LiquidCrystal myLCD(8, 9, 4, 5, 6, 7);
-Date myDate = {2018, 3, 2};
-Time myTime = {1, 1, 1};
+Date myDate = {2018, 3, 8};
+Time myTime = {1, 1, 2};
 Timer myTimer = {0, TIMER_EXP, {0, 0, 0}};
 Timer myTimerPreset = {0, TIMER_EXP, {0, 0, 0}};
 unsigned int myState = FSM_RUN;
 unsigned long int myMicroSecs = MICRO_SECS;
+
+static int setYear(Date &d, int year);
+static int setMonth(Date &d, int month);
+static int setDay(Date &d, int day);
+static int setHour(Time &t, int hour);
+static int setMinute(Time &t, int minute);
+static int setSecond(Time &t, int second);
+static int setTimerHour(Timer &t, int hour);
+static int setTimerMinute(Timer &t, int minute);
+static int setTimerSecond(Timer &t, int second);
+static void setTimerTotSeconds(Timer &t);
+static void copyTimer(Timer &td, Timer ts);
+static void setTimer1(long int microSecs);
+static void addSecondToDateTime(Date &d, Time &t);
+static void subtractSecondFromTimer(Timer &t);
+static int getDayOfWeek(int y, int m, int d);
+static int getWeekNumber(int y, int m, int d);
+static int readButton(int adcButtonIn);
+static void displayDate(Date d);
+static void displayDayOfWeek(Date d);
+static void displayWeekNumber(Date d);
+static void displayTime(Time t);
+static void displayTimer(Timer t);
+static void displayTimer1();
+static void displayMain(Date d, Time t, Timer tr);
 
 static int setYear(Date &d, int year)
 {
