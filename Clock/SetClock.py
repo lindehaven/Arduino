@@ -37,18 +37,24 @@ import sys
 portname = 'COM5'
 baudrate = 9600
 
+def usage(argv):
+    print("Usage: %s [portname [baudrate [microseconds]]]" % argv[0])
+    sys.exit(1)
+
 if len(sys.argv) >= 2 :
     if sys.argv[1] in ("?", "-h", "--help"):
-        print("Usage: %s [portname [baudrate [microseconds]]]" % sys.argv[0])
-        sys.exit(1)
+        usage(sys.argv)
     else:
         portname = sys.argv[1]
 
-if len(sys.argv) == 3 :
+if len(sys.argv) >= 3 :
     baudrate = int(sys.argv[2])
 
-if len(sys.argv) == 4 :
+if len(sys.argv) >= 4 :
     microseconds = int(sys.argv[3])
+
+if len(sys.argv) >= 5 :
+    usage(sys.argv)
 
 try:
     print("Opening port '%s' (%d baud) ..." % (portname, baudrate), end="")
